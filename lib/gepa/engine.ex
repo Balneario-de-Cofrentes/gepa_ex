@@ -24,11 +24,14 @@ defmodule GEPA.Engine do
     run_start_ms = System.monotonic_time(:millisecond)
     Telemetry.emit_run_start(config)
 
+    # Start progress display if enabled
+    progress = maybe_start_progress(config)
+
     # Initialize or load state
     state = initialize_state(config)
 
     # Run optimization loop
-    final_state = optimization_loop(state, config)
+    final_state = optimization_loop(state, config, progress)
 
     # Save final state if run_dir configured
     if config[:run_dir] do
@@ -36,6 +39,9 @@ defmodule GEPA.Engine do
     end
 
     Telemetry.emit_run_stop(final_state, run_start_ms)
+
+    # Finish progress display
+    maybe_finish_progress(progress, final_state)
 
     {:ok, final_state}
   end
@@ -46,7 +52,7 @@ defmodule GEPA.Engine do
   Returns `{:cont, new_state}` to continue or `{:stop, state}` to stop.
   """
   @spec run_iteration(GEPA.State.t(), map()) ::
-          {:cont, GEPA.State.t(), map()} | {:stop, GEPA.State.t()}
+          {:cont, GEPA.State.t(), map(), boolean(), term()} | {:stop, GEPA.State.t()}
   def run_iteration(state, config) do
     # Check stop conditions
     if should_stop?(state, config.stop_conditions) do
@@ -180,7 +186,7 @@ defmodule GEPA.Engine do
         iter_duration_ms
       )
 
-      {result_tag, new_state, new_config}
+      {result_tag, new_state, new_config, accepted?, proposal_tag}
     end
   end
 
@@ -251,20 +257,23 @@ defmodule GEPA.Engine do
     GEPA.State.new(config.seed_candidate, eval_batch, valset_ids)
   end
 
-  defp optimization_loop(state, config, max_iters \\ 1000) do
+  defp optimization_loop(state, config, progress, max_iters \\ 1000) do
     # Safety guard against infinite loops
     if state.i >= max_iters do
       Logger.warning("Reached max iterations (#{max_iters}), stopping")
       state
     else
       case run_iteration(state, config) do
-        {:cont, new_state, new_config} ->
+        {:cont, new_state, new_config, accepted?, proposal_type} ->
+          # Update progress display
+          progress = maybe_update_progress(progress, new_state, accepted?, proposal_type)
+
           # Save state periodically
           if config[:run_dir] && rem(new_state.i, 5) == 0 do
             save_state(new_state, config.run_dir)
           end
 
-          optimization_loop(new_state, new_config, max_iters)
+          optimization_loop(new_state, new_config, progress, max_iters)
 
         {:stop, final_state} ->
           Logger.info("Optimization stopped at iteration #{final_state.i}")
@@ -378,5 +387,53 @@ defmodule GEPA.Engine do
       end
     end)
     |> Enum.max(fn -> 0.0 end)
+  end
+
+  # Progress tracking helpers
+
+  defp maybe_start_progress(%{progress: false}), do: nil
+  defp maybe_start_progress(%{progress: nil}), do: nil
+
+  defp maybe_start_progress(%{progress: true} = config) do
+    max_calls = extract_max_calls(config[:stop_conditions] || [])
+    progress = GEPA.Progress.new(max_calls: max_calls)
+    GEPA.Progress.start(progress)
+    progress
+  end
+
+  defp maybe_start_progress(%{progress: opts} = config) when is_list(opts) do
+    max_calls = extract_max_calls(config[:stop_conditions] || [])
+    progress = GEPA.Progress.new([{:max_calls, max_calls} | opts])
+    GEPA.Progress.start(progress)
+    progress
+  end
+
+  defp maybe_start_progress(_config), do: nil
+
+  defp maybe_update_progress(nil, _state, _accepted?, _proposal_type), do: nil
+
+  defp maybe_update_progress(progress, state, accepted?, proposal_type) do
+    GEPA.Progress.update(progress, %{
+      iteration: state.i,
+      best_score: best_score(state),
+      pareto_size: map_size(state.program_at_pareto_front_valset),
+      total_evals: state.total_num_evals,
+      accepted: accepted?,
+      proposal_type: proposal_type
+    })
+  end
+
+  defp maybe_finish_progress(nil, _state), do: :ok
+
+  defp maybe_finish_progress(progress, state) do
+    result = GEPA.Result.from_state(state)
+    GEPA.Progress.finish(progress, result)
+  end
+
+  defp extract_max_calls(stop_conditions) do
+    Enum.find_value(stop_conditions, fn
+      %GEPA.StopCondition.MaxCalls{max_calls: max} -> max
+      _ -> nil
+    end)
   end
 end

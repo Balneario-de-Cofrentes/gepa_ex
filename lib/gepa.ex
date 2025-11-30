@@ -58,6 +58,8 @@ defmodule GEPA do
   - `:run_dir` - Directory for state persistence (default: nil)
   - `:reflection_llm` - LLM for generating improved instructions (default: nil)
   - `:proposal_template` - Custom template for instruction proposal (default: built-in)
+  - `:progress` - Enable progress display (default: false). Can be `true` or a keyword
+    list with options: `[width: 60, color: true]`
 
   ## Returns
 
@@ -135,7 +137,8 @@ defmodule GEPA do
       skip_perfect_score: Keyword.get(opts, :skip_perfect_score, true),
       seed: opts[:seed] || 0,
       run_dir: opts[:run_dir],
-      instruction_proposal: instruction_proposal
+      instruction_proposal: instruction_proposal,
+      progress: opts[:progress]
     }
   end
 

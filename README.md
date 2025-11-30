@@ -314,10 +314,8 @@ GEPA.Engine ← Behaviors → User Implementations
 
 ### Technical Documentation
 - [Technical Design](docs/TECHNICAL_DESIGN.md)
-- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
 - [LLM Adapter Design](docs/llm_adapter_design.md) - Design for real LLM integration
 - [Completing the Port (Plans)](docs/20251129/completing-the-port/README.md)
-- [Telemetry-First Experiment Tracking](docs/20251129/experiment-tracking-generalized/telemetry-first-experiment-tracking.md)
 
 ## Changelog
 
