@@ -1,5 +1,5 @@
 defmodule Integration.MergeProposerIntegrationTest do
-  use ExUnit.Case, async: false
+  use GEPA.SupertesterCase, isolation: :full_isolation, async: false
 
   # TDD RED PHASE: Engine integration with merge proposer
   # These tests verify merge proposer works end-to-end with Engine

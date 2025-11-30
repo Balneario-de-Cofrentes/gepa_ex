@@ -1,5 +1,5 @@
 defmodule GEPA.CandidateProposalTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   describe "new/1" do
     test "creates proposal with required fields" do

@@ -6,6 +6,7 @@ defmodule GEPA.Engine do
   """
 
   require Logger
+  alias GEPA.Telemetry
 
   @doc """
   Run optimization until stop condition met.
@@ -20,6 +21,9 @@ defmodule GEPA.Engine do
   """
   @spec run(map()) :: {:ok, GEPA.State.t()}
   def run(config) do
+    run_start_ms = System.monotonic_time(:millisecond)
+    Telemetry.emit_run_start(config)
+
     # Initialize or load state
     state = initialize_state(config)
 
@@ -30,6 +34,8 @@ defmodule GEPA.Engine do
     if config[:run_dir] do
       save_state(final_state, config.run_dir)
     end
+
+    Telemetry.emit_run_stop(final_state, run_start_ms)
 
     {:ok, final_state}
   end
@@ -47,9 +53,13 @@ defmodule GEPA.Engine do
       Logger.info("Stop condition met at iteration #{state.i}")
       {:stop, state}
     else
+      prev_best = best_score(state)
+      iter_start_ms = System.monotonic_time(:millisecond)
+
       # Increment iteration
       state = %{state | i: state.i + 1}
-      Logger.debug("Starting iteration #{state.i}")
+      iteration = state.i
+      Logger.debug("Starting iteration #{iteration}")
 
       # Try merge proposer first (if configured and conditions met)
       {proposal, state, config} =
@@ -76,51 +86,101 @@ defmodule GEPA.Engine do
             {reflective, new_state, config}
         end
 
-      # Handle proposal
-      case proposal do
-        %GEPA.CandidateProposal{} ->
-          Logger.debug("Proposal generated for iteration #{state.i} (#{proposal.tag})")
+      selected_candidate = proposal && List.first(proposal.parent_program_ids)
+      Telemetry.emit_iteration_start(iteration, selected_candidate)
 
-          # Update eval counter
-          num_subsample_evals =
-            length(proposal.subsample_scores_before) + length(proposal.subsample_scores_after)
+      proposal_tag = proposal && proposal.tag
+      subsample_before_sum = (proposal && Enum.sum(proposal.subsample_scores_before || [])) || 0.0
+      subsample_after_sum = (proposal && Enum.sum(proposal.subsample_scores_after || [])) || 0.0
+      subsample_ids = proposal && proposal.subsample_indices
 
-          state = %{state | total_num_evals: state.total_num_evals + num_subsample_evals}
+      {result_tag, new_state, new_config, accepted?} =
+        case proposal do
+          %GEPA.CandidateProposal{} ->
+            Logger.debug("Proposal generated for iteration #{state.i} (#{proposal.tag})")
+            Telemetry.emit_proposal_generated(proposal, iteration)
 
-          # Check acceptance
-          if GEPA.CandidateProposal.should_accept?(proposal) do
-            Logger.info("Accepting #{proposal.tag} proposal at iteration #{state.i}")
-            # Evaluate on full validation set and update state
-            new_state = accept_proposal(state, proposal, config)
+            # Update eval counter
+            num_subsample_evals =
+              length(proposal.subsample_scores_before) + length(proposal.subsample_scores_after)
 
-            # Notify merge proposer that a new program was found
-            new_config =
-              case Map.fetch(config, :merge_proposer) do
-                {:ok, nil} ->
-                  config
+            state = %{state | total_num_evals: state.total_num_evals + num_subsample_evals}
 
-                {:ok, merge_proposer} ->
-                  updated_merge = %{merge_proposer | last_iter_found_new_program: true}
-                  updated_merge = GEPA.Proposer.Merge.schedule_if_needed(updated_merge)
-                  %{config | merge_proposer: updated_merge}
+            if GEPA.CandidateProposal.should_accept?(proposal) do
+              Logger.info("Accepting #{proposal.tag} proposal at iteration #{state.i}")
+              new_state = accept_proposal(state, proposal, config, iteration)
 
-                :error ->
-                  config
-              end
+              Telemetry.emit_proposal_decision(
+                proposal,
+                iteration,
+                true,
+                :accepted,
+                subsample_after_sum - subsample_before_sum,
+                proposal.parent_program_ids
+              )
 
-            {:cont, new_state, new_config}
-          else
-            Logger.debug("Rejecting proposal at iteration #{state.i}")
-            # Reject proposal, continue
-            {:cont, state, config}
-          end
+              new_config =
+                case Map.fetch(config, :merge_proposer) do
+                  {:ok, nil} ->
+                    config
 
-        nil ->
-          Logger.debug("No proposal generated at iteration #{state.i}")
-          # Still update eval counter for the attempt
-          state = %{state | total_num_evals: state.total_num_evals + 1}
-          {:cont, state, config}
-      end
+                  {:ok, merge_proposer} ->
+                    updated_merge = %{merge_proposer | last_iter_found_new_program: true}
+                    updated_merge = GEPA.Proposer.Merge.schedule_if_needed(updated_merge)
+                    %{config | merge_proposer: updated_merge}
+
+                  :error ->
+                    config
+                end
+
+              {:cont, new_state, new_config, true}
+            else
+              Logger.debug("Rejecting proposal at iteration #{state.i}")
+
+              Telemetry.emit_proposal_decision(
+                proposal,
+                iteration,
+                false,
+                :not_improved,
+                subsample_after_sum - subsample_before_sum,
+                proposal.parent_program_ids
+              )
+
+              {:cont, state, config, false}
+            end
+
+          nil ->
+            Logger.debug("No proposal generated at iteration #{state.i}")
+            state = %{state | total_num_evals: state.total_num_evals + 1}
+
+            Telemetry.emit_proposal_decision(
+              nil,
+              iteration,
+              false,
+              :schedule_skip,
+              0.0,
+              nil
+            )
+
+            {:cont, state, config, false}
+        end
+
+      iter_duration_ms = System.monotonic_time(:millisecond) - iter_start_ms
+
+      Telemetry.emit_iteration_stop(
+        new_state,
+        iteration,
+        prev_best,
+        accepted?,
+        subsample_before_sum,
+        subsample_after_sum,
+        proposal_tag,
+        proposal && proposal.parent_program_ids,
+        subsample_ids,
+        iter_duration_ms
+      )
+
+      {result_tag, new_state, new_config}
     end
   end
 
@@ -166,8 +226,24 @@ defmodule GEPA.Engine do
 
     adapter = config.adapter
 
+    eval_start = System.monotonic_time(:millisecond)
+
     {:ok, eval_batch} =
       adapter.__struct__.evaluate(adapter, valset_batch, config.seed_candidate, false)
+
+    duration_ms = System.monotonic_time(:millisecond) - eval_start
+
+    Telemetry.emit_evaluation_batch(
+      0,
+      :val,
+      length(valset_ids),
+      duration_ms,
+      eval_batch.scores,
+      0,
+      "seed"
+    )
+
+    Telemetry.emit_baseline(eval_batch, length(valset_ids))
 
     GEPA.State.new(config.seed_candidate, eval_batch, valset_ids)
   end
@@ -200,15 +276,19 @@ defmodule GEPA.Engine do
     end)
   end
 
-  defp accept_proposal(state, proposal, config) do
+  defp accept_proposal(state, proposal, config, iteration) do
     # Evaluate on full validation set
     valset_ids = GEPA.DataLoader.all_ids(config.valset)
     valset_batch = GEPA.DataLoader.fetch(config.valset, valset_ids)
 
     adapter = config.adapter
 
+    eval_start = System.monotonic_time(:millisecond)
+
     case adapter.__struct__.evaluate(adapter, valset_batch, proposal.candidate, false) do
       {:ok, eval_batch} ->
+        duration_ms = System.monotonic_time(:millisecond) - eval_start
+
         # Create scores map
         val_scores =
           valset_ids
@@ -223,6 +303,18 @@ defmodule GEPA.Engine do
             proposal.parent_program_ids,
             val_scores
           )
+
+        Telemetry.emit_evaluation_batch(
+          iteration,
+          :val,
+          length(valset_ids),
+          duration_ms,
+          eval_batch.scores,
+          new_idx,
+          proposal.tag
+        )
+
+        Telemetry.emit_valset_update(new_state, iteration, new_idx, val_scores)
 
         Logger.info(
           "Accepted new program #{new_idx} with avg score #{elem(GEPA.State.get_program_score(new_state, new_idx), 0)}"
@@ -243,7 +335,8 @@ defmodule GEPA.Engine do
       candidate_selector: config.candidate_selector,
       perfect_score: config[:perfect_score] || 1.0,
       skip_perfect_score: Keyword.get(config |> Map.to_list(), :skip_perfect_score, true),
-      minibatch_size: config[:reflection_minibatch_size] || 3
+      minibatch_size: config[:reflection_minibatch_size] || 3,
+      instruction_proposal: config[:instruction_proposal]
     )
   end
 
@@ -262,5 +355,17 @@ defmodule GEPA.Engine do
          state <- :erlang.binary_to_term(data) do
       {:ok, state}
     end
+  end
+
+  defp best_score(state) do
+    state.prog_candidate_val_subscores
+    |> Enum.map(fn scores ->
+      if map_size(scores) == 0 do
+        0.0
+      else
+        Enum.sum(Map.values(scores)) / map_size(scores)
+      end
+    end)
+    |> Enum.max(fn -> 0.0 end)
   end
 end

@@ -1,5 +1,5 @@
 defmodule GEPA.LLM.ReqLLMErrorTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   alias GEPA.LLM.ReqLLM
 

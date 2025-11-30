@@ -1,5 +1,5 @@
 defmodule GEPA.EngineTest do
-  use ExUnit.Case, async: false
+  use GEPA.SupertesterCase, isolation: :full_isolation, async: false
 
   alias GEPA.Engine
   alias GEPA.Adapters.Basic

@@ -1,5 +1,5 @@
 defmodule GEPA.Proposer.MergeExecutionTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD: Tests for actual merge execution and predictor merging logic
 

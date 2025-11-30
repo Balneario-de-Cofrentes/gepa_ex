@@ -1,5 +1,5 @@
 defmodule GEPA.Proposer.MergeTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD RED PHASE: Main Merge Proposer Module
   # These tests define the complete merge proposer behavior

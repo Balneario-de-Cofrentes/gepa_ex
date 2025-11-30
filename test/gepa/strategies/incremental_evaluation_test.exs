@@ -1,5 +1,5 @@
 defmodule GEPA.Strategies.IncrementalEvaluationTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD RED PHASE: Incremental Evaluation Policy
   # Progressively evaluates validation set instead of all at once

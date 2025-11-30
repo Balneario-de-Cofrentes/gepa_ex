@@ -1,5 +1,5 @@
 defmodule GEPA.LLMTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
   doctest GEPA.LLM
 
   describe "GEPA.LLM behavior" do

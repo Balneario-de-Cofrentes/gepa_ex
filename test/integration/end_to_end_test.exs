@@ -1,5 +1,5 @@
 defmodule GEPA.Integration.EndToEndTest do
-  use ExUnit.Case, async: false
+  use GEPA.SupertesterCase, isolation: :full_isolation, async: false
 
   @moduletag :integration
   @moduletag timeout: 15000

@@ -1,5 +1,5 @@
 defmodule GEPA.Proposer.MergeUtilsTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD RED PHASE: Genealogy Tracking Utilities
   # These tests define the behavior we need for merge proposer

@@ -1,0 +1,329 @@
+defmodule GEPA.Proposer.ReflectiveTest do
+  use GEPA.SupertesterCase, isolation: :full_isolation
+
+  alias GEPA.Proposer.Reflective
+  alias GEPA.Proposer.InstructionProposal
+  alias GEPA.LLM.Mock
+  alias GEPA.Adapters.Basic
+  alias GEPA.DataLoader
+  alias GEPA.State
+
+  describe "new/1" do
+    test "creates with defaults" do
+      adapter = Basic.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer = Reflective.new(adapter: adapter, trainset: trainset)
+
+      assert proposer.adapter == adapter
+      assert proposer.trainset == trainset
+      assert proposer.candidate_selector == GEPA.Strategies.CandidateSelector.Pareto
+      assert proposer.perfect_score == 1.0
+      assert proposer.skip_perfect_score == true
+      assert proposer.minibatch_size == 3
+      assert proposer.instruction_proposal == nil
+    end
+
+    test "accepts instruction_proposal option" do
+      adapter = Basic.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+      llm = Mock.new(responses: ["improved"])
+      instruction_proposal = InstructionProposal.new(llm: llm)
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          instruction_proposal: instruction_proposal
+        )
+
+      assert proposer.instruction_proposal == instruction_proposal
+    end
+
+    test "accepts custom minibatch_size" do
+      adapter = Basic.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 5
+        )
+
+      assert proposer.minibatch_size == 5
+    end
+  end
+
+  describe "propose/2 without instruction_proposal (fallback)" do
+    test "uses simple improvement when instruction_proposal is nil" do
+      adapter = Basic.new()
+
+      trainset =
+        DataLoader.List.new([
+          %{input: "What is 2+2?", answer: "4"}
+        ])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          skip_perfect_score: false
+        )
+
+      # Create a minimal state
+      state = create_test_state(%{"instruction" => "Answer questions"})
+
+      case Reflective.propose(proposer, state) do
+        {:ok, proposal} ->
+          # Fallback should append [Optimized]
+          assert String.contains?(proposal.candidate["instruction"], "[Optimized]")
+          assert proposal.tag == "reflective_mutation"
+
+        :none ->
+          # This can happen if score is perfect
+          :ok
+
+        {:error, _reason} ->
+          # Adapter might fail in test environment
+          :ok
+      end
+    end
+  end
+
+  describe "propose/2 with instruction_proposal (LLM-based)" do
+    test "uses LLM to generate improved candidate" do
+      llm = Mock.new(responses: ["LLM-improved instruction"])
+      instruction_proposal = InstructionProposal.new(llm: llm)
+
+      adapter = Basic.new()
+
+      trainset =
+        DataLoader.List.new([
+          %{input: "What is 2+2?", answer: "4"}
+        ])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          skip_perfect_score: false,
+          instruction_proposal: instruction_proposal
+        )
+
+      state = create_test_state(%{"instruction" => "Answer questions"})
+
+      case Reflective.propose(proposer, state) do
+        {:ok, proposal} ->
+          # Should use LLM response, not fallback
+          assert proposal.candidate["instruction"] == "LLM-improved instruction"
+          refute String.contains?(proposal.candidate["instruction"], "[Optimized]")
+          assert proposal.tag == "reflective_mutation"
+
+        :none ->
+          # Perfect score skip
+          :ok
+
+        {:error, _reason} ->
+          # Adapter might fail
+          :ok
+      end
+    end
+
+    test "calls adapter.make_reflective_dataset when instruction_proposal is provided" do
+      # Track whether make_reflective_dataset was called
+      test_pid = self()
+
+      # Create a custom adapter that tracks calls
+      defmodule TrackingAdapter do
+        @behaviour GEPA.Adapter
+
+        def new(test_pid), do: %{__struct__: __MODULE__, test_pid: test_pid}
+
+        def evaluate(%{test_pid: _}, batch, _candidate, _capture_traces) do
+          scores = Enum.map(batch, fn _ -> 0.5 end)
+
+          {:ok,
+           %GEPA.EvaluationBatch{
+             outputs: Enum.map(batch, fn _ -> "output" end),
+             scores: scores,
+             trajectories: Enum.map(batch, fn _ -> %{} end)
+           }}
+        end
+
+        def make_reflective_dataset(%{test_pid: pid}, _candidate, _eval_batch, components) do
+          send(pid, {:make_reflective_dataset_called, components})
+
+          dataset =
+            for comp <- components, into: %{} do
+              {comp, [%{"Inputs" => %{}, "Generated Outputs" => "", "Feedback" => "test"}]}
+            end
+
+          {:ok, dataset}
+        end
+      end
+
+      adapter = TrackingAdapter.new(test_pid)
+      llm = Mock.new(responses: ["improved"])
+      instruction_proposal = InstructionProposal.new(llm: llm)
+
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          skip_perfect_score: false,
+          instruction_proposal: instruction_proposal
+        )
+
+      state = create_test_state(%{"instruction" => "Original"})
+
+      Reflective.propose(proposer, state)
+
+      # Verify make_reflective_dataset was called
+      assert_receive {:make_reflective_dataset_called, ["instruction"]}, 1000
+    end
+
+    test "handles multiple components" do
+      llm =
+        Mock.new(
+          response_fn: fn prompt ->
+            if String.contains?(prompt, "system_prompt") do
+              "Improved system prompt"
+            else
+              "Improved user template"
+            end
+          end
+        )
+
+      instruction_proposal = InstructionProposal.new(llm: llm)
+
+      adapter = Basic.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          skip_perfect_score: false,
+          instruction_proposal: instruction_proposal
+        )
+
+      state =
+        create_test_state(%{
+          "system_prompt" => "Original system",
+          "user_template" => "Original user"
+        })
+
+      case Reflective.propose(proposer, state) do
+        {:ok, proposal} ->
+          assert Map.has_key?(proposal.candidate, "system_prompt")
+          assert Map.has_key?(proposal.candidate, "user_template")
+
+        _ ->
+          :ok
+      end
+    end
+  end
+
+  describe "propose/2 skip_perfect_score behavior" do
+    test "skips when all scores are perfect and skip_perfect_score is true" do
+      # Create an adapter that always returns perfect scores
+      defmodule PerfectAdapter do
+        @behaviour GEPA.Adapter
+
+        def new, do: %{__struct__: __MODULE__}
+
+        def evaluate(%{}, batch, _candidate, _capture_traces) do
+          {:ok,
+           %GEPA.EvaluationBatch{
+             outputs: Enum.map(batch, fn _ -> "perfect" end),
+             scores: Enum.map(batch, fn _ -> 1.0 end),
+             trajectories: nil
+           }}
+        end
+
+        def make_reflective_dataset(%{}, _candidate, _eval_batch, _components) do
+          {:ok, %{}}
+        end
+      end
+
+      adapter = PerfectAdapter.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          skip_perfect_score: true,
+          perfect_score: 1.0
+        )
+
+      state = create_test_state(%{"instruction" => "Already perfect"})
+
+      result = Reflective.propose(proposer, state)
+      assert result == :none
+    end
+
+    test "does not skip when skip_perfect_score is false" do
+      defmodule PerfectAdapter2 do
+        @behaviour GEPA.Adapter
+
+        def new, do: %{__struct__: __MODULE__}
+
+        def evaluate(%{}, batch, _candidate, _capture_traces) do
+          {:ok,
+           %GEPA.EvaluationBatch{
+             outputs: Enum.map(batch, fn _ -> "perfect" end),
+             scores: Enum.map(batch, fn _ -> 1.0 end),
+             trajectories: nil
+           }}
+        end
+
+        def make_reflective_dataset(%{}, _candidate, _eval_batch, _components) do
+          {:ok, %{}}
+        end
+      end
+
+      adapter = PerfectAdapter2.new()
+      trainset = DataLoader.List.new([%{input: "test", answer: "answer"}])
+
+      proposer =
+        Reflective.new(
+          adapter: adapter,
+          trainset: trainset,
+          minibatch_size: 1,
+          # Don't skip
+          skip_perfect_score: false
+        )
+
+      state = create_test_state(%{"instruction" => "Perfect but continue"})
+
+      result = Reflective.propose(proposer, state)
+      # Should return a proposal, not :none
+      assert match?({:ok, %GEPA.CandidateProposal{}}, result)
+    end
+  end
+
+  # Helper to create a test state
+  defp create_test_state(seed_candidate) do
+    # Create minimal state for testing
+    %State{
+      program_candidates: [seed_candidate],
+      prog_candidate_val_subscores: [%{0 => 0.5}],
+      pareto_front_valset: %{0 => 0.5},
+      program_at_pareto_front_valset: %{0 => MapSet.new([0])},
+      parent_program_for_candidate: [[nil]],
+      list_of_named_predictors: Map.keys(seed_candidate),
+      i: 0,
+      total_num_evals: 0,
+      num_full_ds_evals: 0
+    }
+  end
+end

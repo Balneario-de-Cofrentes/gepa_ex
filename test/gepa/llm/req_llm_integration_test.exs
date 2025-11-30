@@ -1,5 +1,5 @@
 defmodule GEPA.LLM.ReqLLMIntegrationTest do
-  use ExUnit.Case
+  use GEPA.SupertesterCase, isolation: :full_isolation, async: false
 
   # These tests demonstrate the complete/3 function behavior
   # They don't make real HTTP calls, but test the request building logic

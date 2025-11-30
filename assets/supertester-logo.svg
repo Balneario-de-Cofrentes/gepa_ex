@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Supertester Logo</title>
+  <desc id="desc">An abstract shield with interlocking paths forming the letter S</desc>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00b2a9"/>
+      <stop offset="100%" stop-color="#004e92"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fcb045"/>
+      <stop offset="100%" stop-color="#fd1d1d"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="32" fill="#0d1117" stroke="#0c6cf2" stroke-width="6"/>
+  <path d="M64 72c0-13.255 10.745-24 24-24h80c13.255 0 24 10.745 24 24v16c0 13.255-10.745 24-24 24h-56c-13.255 0-24 10.745-24 24v8c0 13.255 10.745 24 24 24h40c13.255 0 24 10.745 24 24v16c0 13.255-10.745 24-24 24H88c-13.255 0-24-10.745-24-24v-14" fill="none" stroke="url(#g)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64 92c0-13.255 10.745-24 24-24h48c13.255 0 24 10.745 24 24v6c0 13.255-10.745 24-24 24h-24c-13.255 0-24 10.745-24 24v16c0 13.255 10.745 24 24 24h56c13.255 0 24 10.745 24 24v16c0 13.255-10.745 24-24 24h-64" fill="none" stroke="url(#g2)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+  <circle cx="128" cy="44" r="8" fill="#fcb045"/>
+  <circle cx="128" cy="212" r="8" fill="#00b2a9"/>
+</svg>

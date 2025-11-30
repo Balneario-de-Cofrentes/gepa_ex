@@ -1,5 +1,5 @@
 defmodule GEPA.DataLoaderTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   alias GEPA.DataLoader
 

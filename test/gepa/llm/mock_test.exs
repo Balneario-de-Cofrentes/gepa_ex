@@ -1,5 +1,5 @@
 defmodule GEPA.LLM.MockTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
   doctest GEPA.LLM.Mock
 
   describe "new/1" do

@@ -1,5 +1,5 @@
 defmodule GEPA.StateTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   alias GEPA.State
 

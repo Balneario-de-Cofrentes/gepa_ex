@@ -33,7 +33,7 @@ This is an Elixir port of the [Python GEPA library](https://github.com/gepa-ai/g
 - 🚀 **BEAM concurrency** for 5-10x evaluation speedup (coming in Phase 4)
 - 🛡️ **OTP supervision** for fault-tolerant external service integration
 - 🔄 **Functional programming** for clean, testable code
-- 📊 **Telemetry** for comprehensive observability (coming in Phase 3)
+ - 📊 **Telemetry** event schema for lifecycle, iteration, proposal, and evaluation metrics
 - ✨ **Production LLMs** - OpenAI GPT-4o-mini & Google Gemini Flash Lite (`gemini-flash-lite-latest`)
 
 ## Production Ready
@@ -44,12 +44,14 @@ This is an Elixir port of the [Python GEPA library](https://github.com/gepa-ai/g
 - ✅ `GEPA.optimize/1` - Public API (working!)
 - ✅ `GEPA.Engine` - Full optimization loop with stop conditions
 - ✅ `GEPA.Proposer.Reflective` - Mutation strategy
+- ✅ LLM-based instruction proposal via `reflection_llm` and custom templates
 - ✅ `GEPA.State` - State management with automatic Pareto updates (96.5% coverage)
 - ✅ `GEPA.Utils.Pareto` - Multi-objective optimization (93.5% coverage, property-verified)
 - ✅ `GEPA.Result` - Result analysis (100% coverage)
 - ✅ `GEPA.Adapters.Basic` - Q&A adapter (92.1% coverage)
 - ✅ Stop conditions with budget control
 - ✅ State persistence (save/load)
+- ✅ Telemetry event emitters for runs, iterations, proposals, and evaluation batches
 - ✅ End-to-end integration tested
 
 ### Phase 1 Additions - NEW! 🎉
@@ -116,10 +118,10 @@ This is an Elixir port of the [Python GEPA library](https://github.com/gepa-ai/g
 - ✅ Additional stop conditions (Timeout, NoImprovement)
 - ✅ Engine integration for merge proposer
 
-**Phase 3: Production Hardening** - 8-10 weeks
-- 📡 Telemetry integration
-- 🎨 Progress tracking
-- 🛡️ Robust error handling
+**Phase 3: Production Hardening** - in progress
+- ✅ Telemetry event schema and helpers
+- 🎨 Progress tracking (planned)
+- 🛡️ Robust error handling (planned)
 
 **Phase 4: Ecosystem Expansion** - 12-14 weeks
 - 🔌 Additional adapters (Generic, RAG)
@@ -181,6 +183,33 @@ adapter = GEPA.Adapters.Basic.new(llm: llm)
 ```
 
 See [Examples overview](examples/README.md) for complete working examples!
+
+### LLM-Based Instruction Proposal (NEW!)
+
+Use an LLM to propose improved component instructions based on reflective feedback. You can also provide a custom proposal template.
+
+```elixir
+reflection_llm = GEPA.LLM.ReqLLM.new(provider: :openai, model: "gpt-4o-mini")
+
+custom_template = """
+Improve {component_name}:
+Current: {current_instruction}
+Feedback: {reflective_dataset}
+New instruction:
+"""
+
+{:ok, result} = GEPA.optimize(
+  seed_candidate: %{"instruction" => "You are a concise math tutor."},
+  trainset: trainset,
+  valset: valset,
+  adapter: adapter,
+  max_metric_calls: 50,
+  reflection_llm: reflection_llm,
+  proposal_template: custom_template
+)
+```
+
+When `reflection_llm` is not provided, GEPA falls back to a simple testing-only improvement marker (`"[Optimized]"`).
 
 ### Interactive Livebooks (NEW!)
 
@@ -256,11 +285,16 @@ GEPA.Engine ← Behaviors → User Implementations
 - [Technical Design](docs/TECHNICAL_DESIGN.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
 - [LLM Adapter Design](docs/llm_adapter_design.md) - Design for real LLM integration
+- [Completing the Port (Plans)](docs/20251129/completing-the-port/README.md)
+- [Telemetry-First Experiment Tracking](docs/20251129/experiment-tracking-generalized/telemetry-first-experiment-tracking.md)
 
 ## Changelog
 
-### v0.1.1 (2025-10-29)
-- Documentation cleanup: removed broken links to non-existent documentation files
+### v0.1.1 (2025-11-29)
+- LLM-based instruction proposal via `reflection_llm` and optional `proposal_template`
+- Telemetry event schema for runs, iterations, proposals, and evaluation batches
+- Reflective proposer now consumes instruction proposals (LLM-backed) with fallback marker
+- New docs for completing the port and telemetry-first experiment tracking
 
 ### v0.1.0 (2025-10-29)
 - Initial release with Phase 1 & 2 complete

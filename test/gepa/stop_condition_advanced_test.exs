@@ -1,5 +1,5 @@
 defmodule GEPA.StopConditionAdvancedTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD RED PHASE: Additional Stop Conditions
 
@@ -23,10 +23,9 @@ defmodule GEPA.StopConditionAdvancedTest do
     end
 
     test "stops after timeout expires" do
-      # Already expired
-      timeout = Timeout.new(seconds: 0)
-      # Small delay
-      :timer.sleep(10)
+      timeout =
+        Timeout.new(seconds: 1)
+        |> Map.update!(:start_time, &(&1 - 2))
 
       state = create_minimal_state()
 

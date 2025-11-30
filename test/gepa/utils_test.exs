@@ -1,5 +1,5 @@
 defmodule GEPA.UtilsTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   # TDD RED PHASE: Merge Proposer Utilities
   # These tests will fail until we implement the functions

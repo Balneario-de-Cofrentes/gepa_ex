@@ -1,5 +1,5 @@
 defmodule GEPA.Proposer.MergePropertiesTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
   use ExUnitProperties
 
   # Property-based tests for merge proposer invariants

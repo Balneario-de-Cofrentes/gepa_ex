@@ -1,5 +1,5 @@
 defmodule GEPA.Utils.ParetoPropertiesTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
   use ExUnitProperties
 
   alias GEPA.Utils.Pareto

@@ -1,5 +1,5 @@
 defmodule GepaExTest do
-  use ExUnit.Case
+  use GEPA.SupertesterCase, isolation: :full_isolation, async: false
   doctest GepaEx
 
   test "greets the world" do

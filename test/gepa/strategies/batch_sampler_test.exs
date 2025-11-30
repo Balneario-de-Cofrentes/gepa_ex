@@ -1,5 +1,5 @@
 defmodule GEPA.Strategies.BatchSamplerTest do
-  use ExUnit.Case, async: true
+  use GEPA.SupertesterCase, isolation: :full_isolation
 
   alias GEPA.Strategies.BatchSampler.{Simple, EpochShuffled}
   alias GEPA.DataLoader

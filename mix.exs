@@ -53,6 +53,7 @@ defmodule GepaEx.MixProject do
       {:req, "~> 0.5.0"},
 
       # Development and testing
+      {:supertester, "~> 0.3.1", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:stream_data, "~> 1.1", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
@@ -82,6 +83,7 @@ defmodule GepaEx.MixProject do
         "docs/PROJECT_SUMMARY.md",
         "docs/TECHNICAL_DESIGN.md",
         "docs/llm_adapter_design.md",
+        {"docs/SUPERTESTER.md", title: "Supertester"},
         {"examples/README.md", title: "Examples"},
         {"livebooks/README.md", title: "Livebooks"},
         "LICENSE"
@@ -91,6 +93,9 @@ defmodule GepaEx.MixProject do
         "Design Docs": [
           "docs/TECHNICAL_DESIGN.md",
           "docs/llm_adapter_design.md"
+        ],
+        Testing: [
+          "docs/SUPERTESTER.md"
         ],
         Examples: [
           "examples/README.md",
