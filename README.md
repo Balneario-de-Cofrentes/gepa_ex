@@ -20,7 +20,7 @@ Add `gepa_ex` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:gepa_ex, "~> 0.1.1"}
+    {:gepa_ex, "~> 0.1.2"}
   ]
 end
 ```
@@ -184,6 +184,37 @@ adapter = GEPA.Adapters.Basic.new(llm: llm)
 
 See [Examples overview](examples/README.md) for complete working examples!
 
+### Candidate Selection Strategies (NEW)
+
+GEPA includes multiple candidate selectors to balance exploration vs. exploitation:
+
+- `GEPA.Strategies.CandidateSelector.Pareto` (default): frequency-weighted sampling from Pareto front
+- `GEPA.Strategies.CandidateSelector.CurrentBest`: always pick the best-scoring program
+- `GEPA.Strategies.CandidateSelector.EpsilonGreedy`: configurable exploration with optional epsilon decay
+
+Stateful selectors (like epsilon-greedy) are carried forward automatically so decay persists across iterations.
+
+To enable epsilon-greedy with decay:
+
+```elixir
+selector =
+  GEPA.Strategies.CandidateSelector.EpsilonGreedy.new(
+    epsilon: 0.3,
+    epsilon_decay: 0.95,
+    epsilon_min: 0.05
+  )
+
+{:ok, result} =
+  GEPA.optimize(
+    seed_candidate: %{"instruction" => "..."},
+    trainset: trainset,
+    valset: valset,
+    adapter: adapter,
+    max_metric_calls: 50,
+    candidate_selector: selector
+  )
+```
+
 ### LLM-Based Instruction Proposal (NEW!)
 
 Use an LLM to propose improved component instructions based on reflective feedback. You can also provide a custom proposal template.
@@ -290,11 +321,14 @@ GEPA.Engine ← Behaviors → User Implementations
 
 ## Changelog
 
+### v0.1.2 (2025-11-29)
+- Epsilon-greedy candidate selector with decay/reset and stateful selector support in engine/proposer
+- Telemetry event schema and LLM-backed instruction proposal with custom templates
+- Reflective proposer consumes instruction proposals with fallback marker when no LLM is provided
+- Docs for completing the port and telemetry-first experiment tracking
+
 ### v0.1.1 (2025-11-29)
-- LLM-based instruction proposal via `reflection_llm` and optional `proposal_template`
-- Telemetry event schema for runs, iterations, proposals, and evaluation batches
-- Reflective proposer now consumes instruction proposals (LLM-backed) with fallback marker
-- New docs for completing the port and telemetry-first experiment tracking
+- Documentation cleanup and release tagging
 
 ### v0.1.0 (2025-10-29)
 - Initial release with Phase 1 & 2 complete

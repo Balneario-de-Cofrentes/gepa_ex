@@ -41,7 +41,7 @@ defmodule GEPA.Proposer.Reflective do
   @type t :: %__MODULE__{
           adapter: term(),
           trainset: GEPA.DataLoader.t(),
-          candidate_selector: module(),
+          candidate_selector: module() | struct(),
           perfect_score: float(),
           skip_perfect_score: boolean(),
           minibatch_size: pos_integer(),
@@ -75,37 +75,37 @@ defmodule GEPA.Proposer.Reflective do
   6. Evaluate new candidate
   7. Return proposal if improved
   """
+  @spec propose(t(), GEPA.State.t()) ::
+          {:ok, GEPA.CandidateProposal.t(), module() | struct()}
+          | {:error, term(), module() | struct()}
+          | {:none, module() | struct()}
   def propose(%__MODULE__{} = proposer, state) do
-    # Step 1: Select candidate
     rand_state = :rand.seed(:exsss, {state.i, 42, state.total_num_evals})
 
-    {candidate_idx, _new_rand} = proposer.candidate_selector.select(state, rand_state)
+    {candidate_idx, updated_selector, _new_rand} =
+      select_candidate(proposer.candidate_selector, state, rand_state)
+
+    proposer = %{proposer | candidate_selector: updated_selector}
     candidate = Enum.at(state.program_candidates, candidate_idx)
 
-    # Step 2: Sample minibatch (simplified - just take first N)
     trainset_ids =
       GEPA.DataLoader.all_ids(proposer.trainset)
       |> Enum.take(proposer.minibatch_size)
 
     minibatch = GEPA.DataLoader.fetch(proposer.trainset, trainset_ids)
 
-    # Step 3: Evaluate current candidate with traces
     adapter = proposer.adapter
     capture_traces = proposer.instruction_proposal != nil
 
     case adapter.__struct__.evaluate(adapter, minibatch, candidate, capture_traces) do
       {:ok, eval_curr} ->
-        # Step 4: Check for perfect score
         if proposer.skip_perfect_score and all_perfect?(eval_curr.scores, proposer.perfect_score) do
-          :none
+          {:none, proposer.candidate_selector}
         else
-          # Step 5: Generate improved candidate
           case generate_improved_candidate(proposer, candidate, eval_curr) do
             {:ok, new_candidate} ->
-              # Step 6: Evaluate new candidate
               case adapter.__struct__.evaluate(adapter, minibatch, new_candidate, false) do
                 {:ok, eval_new} ->
-                  # Return proposal
                   {:ok,
                    %GEPA.CandidateProposal{
                      candidate: new_candidate,
@@ -118,19 +118,19 @@ defmodule GEPA.Proposer.Reflective do
                        new_instructions: changed_components(candidate, new_candidate),
                        trajectories?: capture_traces
                      }
-                   }}
+                   }, proposer.candidate_selector}
 
                 {:error, reason} ->
-                  {:error, reason}
+                  {:error, reason, proposer.candidate_selector}
               end
 
             {:error, reason} ->
-              {:error, {:proposal_generation_failed, reason}}
+              {:error, {:proposal_generation_failed, reason}, proposer.candidate_selector}
           end
         end
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, reason, proposer.candidate_selector}
     end
   end
 
@@ -138,6 +138,22 @@ defmodule GEPA.Proposer.Reflective do
 
   defp all_perfect?(scores, perfect_score) do
     Enum.all?(scores, &(&1 >= perfect_score))
+  end
+
+  defp select_candidate(selector, state, rand_state) do
+    case selector do
+      module when is_atom(module) ->
+        case module.select(state, rand_state) do
+          {idx, new_rand} -> {idx, selector, new_rand}
+          {idx, updated_selector, new_rand} -> {idx, updated_selector, new_rand}
+        end
+
+      %{__struct__: module} = struct ->
+        case module.select(struct, state, rand_state) do
+          {idx, new_rand} -> {idx, struct, new_rand}
+          {idx, updated_selector, new_rand} -> {idx, updated_selector, new_rand}
+        end
+    end
   end
 
   defp generate_improved_candidate(proposer, candidate, eval_batch) do

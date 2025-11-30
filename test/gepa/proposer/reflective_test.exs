@@ -76,16 +76,16 @@ defmodule GEPA.Proposer.ReflectiveTest do
       state = create_test_state(%{"instruction" => "Answer questions"})
 
       case Reflective.propose(proposer, state) do
-        {:ok, proposal} ->
+        {:ok, proposal, _selector} ->
           # Fallback should append [Optimized]
           assert String.contains?(proposal.candidate["instruction"], "[Optimized]")
           assert proposal.tag == "reflective_mutation"
 
-        :none ->
+        {:none, _selector} ->
           # This can happen if score is perfect
           :ok
 
-        {:error, _reason} ->
+        {:error, _reason, _selector} ->
           # Adapter might fail in test environment
           :ok
       end
@@ -116,17 +116,17 @@ defmodule GEPA.Proposer.ReflectiveTest do
       state = create_test_state(%{"instruction" => "Answer questions"})
 
       case Reflective.propose(proposer, state) do
-        {:ok, proposal} ->
+        {:ok, proposal, _selector} ->
           # Should use LLM response, not fallback
           assert proposal.candidate["instruction"] == "LLM-improved instruction"
           refute String.contains?(proposal.candidate["instruction"], "[Optimized]")
           assert proposal.tag == "reflective_mutation"
 
-        :none ->
+        {:none, _selector} ->
           # Perfect score skip
           :ok
 
-        {:error, _reason} ->
+        {:error, _reason, _selector} ->
           # Adapter might fail
           :ok
       end
@@ -221,7 +221,7 @@ defmodule GEPA.Proposer.ReflectiveTest do
         })
 
       case Reflective.propose(proposer, state) do
-        {:ok, proposal} ->
+        {:ok, proposal, _selector} ->
           assert Map.has_key?(proposal.candidate, "system_prompt")
           assert Map.has_key?(proposal.candidate, "user_template")
 
@@ -268,7 +268,7 @@ defmodule GEPA.Proposer.ReflectiveTest do
       state = create_test_state(%{"instruction" => "Already perfect"})
 
       result = Reflective.propose(proposer, state)
-      assert result == :none
+      assert {:none, _selector} = result
     end
 
     test "does not skip when skip_perfect_score is false" do
@@ -307,7 +307,7 @@ defmodule GEPA.Proposer.ReflectiveTest do
 
       result = Reflective.propose(proposer, state)
       # Should return a proposal, not :none
-      assert match?({:ok, %GEPA.CandidateProposal{}}, result)
+      assert match?({:ok, %GEPA.CandidateProposal{}, _}, result)
     end
   end
 

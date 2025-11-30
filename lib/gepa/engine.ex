@@ -65,8 +65,8 @@ defmodule GEPA.Engine do
       {proposal, state, config} =
         case Map.fetch(config, :merge_proposer) do
           {:ok, nil} ->
-            {reflective, new_state} = try_reflective_proposal(state, config)
-            {reflective, new_state, config}
+            {reflective, new_state, new_config} = try_reflective_proposal(state, config)
+            {reflective, new_state, new_config}
 
           {:ok, merge_proposer} ->
             {merge_proposal, updated_proposer} =
@@ -77,13 +77,13 @@ defmodule GEPA.Engine do
             if merge_proposal do
               {merge_proposal, state, merge_config}
             else
-              {reflective, new_state} = try_reflective_proposal(state, merge_config)
-              {reflective, new_state, merge_config}
+              {reflective, new_state, new_config} = try_reflective_proposal(state, merge_config)
+              {reflective, new_state, new_config}
             end
 
           :error ->
-            {reflective, new_state} = try_reflective_proposal(state, config)
-            {reflective, new_state, config}
+            {reflective, new_state, new_config} = try_reflective_proposal(state, config)
+            {reflective, new_state, new_config}
         end
 
       selected_candidate = proposal && List.first(proposal.parent_program_ids)
@@ -189,15 +189,18 @@ defmodule GEPA.Engine do
     proposer = config[:reflective_proposer] || create_proposer(config)
 
     case GEPA.Proposer.Reflective.propose(proposer, state) do
-      {:ok, proposal} ->
-        {proposal, state}
+      {:ok, proposal, selector} ->
+        new_config = put_candidate_selector(config, selector)
+        {proposal, state, new_config}
 
-      :none ->
-        {nil, state}
+      {:none, selector} ->
+        new_config = put_candidate_selector(config, selector)
+        {nil, state, new_config}
 
-      {:error, reason} ->
+      {:error, reason, selector} ->
         Logger.warning("Reflective proposal failed: #{inspect(reason)}")
-        {nil, state}
+        new_config = put_candidate_selector(config, selector)
+        {nil, state, new_config}
     end
   end
 
@@ -328,11 +331,19 @@ defmodule GEPA.Engine do
     end
   end
 
+  defp candidate_selector_from_config(config) do
+    Map.get(config, :candidate_selector, GEPA.Strategies.CandidateSelector.Pareto)
+  end
+
+  defp put_candidate_selector(config, selector) do
+    Map.put(config, :candidate_selector, selector || candidate_selector_from_config(config))
+  end
+
   defp create_proposer(config) do
     GEPA.Proposer.Reflective.new(
       adapter: config.adapter,
       trainset: config.trainset,
-      candidate_selector: config.candidate_selector,
+      candidate_selector: candidate_selector_from_config(config),
       perfect_score: config[:perfect_score] || 1.0,
       skip_perfect_score: Keyword.get(config |> Map.to_list(), :skip_perfect_score, true),
       minibatch_size: config[:reflection_minibatch_size] || 3,

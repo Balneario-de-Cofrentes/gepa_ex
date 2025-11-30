@@ -11,16 +11,18 @@ defmodule GEPA.Strategies.CandidateSelector do
 
   ## Parameters
 
+  - `selector_state`: Struct or module implementing the selection logic
   - `state`: Current optimization state
   - `rand_state`: Erlang random state (optional, for stochastic selectors)
 
   ## Returns
 
-  For deterministic selectors: `program_idx`
-  For stochastic selectors: `{program_idx, new_rand_state}`
+  Stateless selectors: `{program_idx, new_rand_state}`
+  Stateful selectors: `{program_idx, updated_selector, new_rand_state}`
   """
-  @callback select(GEPA.State.t(), :rand.state() | nil) ::
-              GEPA.Types.program_idx() | {GEPA.Types.program_idx(), :rand.state()}
+  @callback select(term(), GEPA.State.t(), :rand.state() | nil) ::
+              {GEPA.Types.program_idx(), :rand.state()}
+              | {GEPA.Types.program_idx(), term(), :rand.state()}
 end
 
 defmodule GEPA.Strategies.CandidateSelector.Pareto do
@@ -36,10 +38,14 @@ defmodule GEPA.Strategies.CandidateSelector.Pareto do
 
   alias GEPA.Utils.Pareto
 
-  @impl true
   @spec select(GEPA.State.t(), :rand.state() | nil) ::
           {GEPA.Types.program_idx(), :rand.state()}
-  def select(state, rand_state) do
+  def select(state, rand_state), do: select(nil, state, rand_state)
+
+  @impl true
+  @spec select(term(), GEPA.State.t(), :rand.state() | nil) ::
+          {GEPA.Types.program_idx(), :rand.state()}
+  def select(_selector, state, rand_state) do
     # Build scores map for Pareto utilities
     scores =
       state.prog_candidate_val_subscores
@@ -71,22 +77,30 @@ defmodule GEPA.Strategies.CandidateSelector.CurrentBest do
 
   @behaviour GEPA.Strategies.CandidateSelector
 
-  @impl true
+  @doc """
+  Return the index of the best-scoring program using average score and coverage.
+  """
+  @spec best_candidate_idx(GEPA.State.t()) :: GEPA.Types.program_idx()
+  def best_candidate_idx(state) do
+    state.prog_candidate_val_subscores
+    |> Enum.with_index()
+    |> Enum.map(fn {scores, idx} ->
+      {avg, count} = GEPA.Strategies.EvaluationPolicy.Full.calculate_avg_and_coverage(scores)
+      {idx, avg, count}
+    end)
+    |> Enum.max_by(fn {_idx, avg, coverage} -> {avg, coverage} end, fn -> {0, 0.0, 0} end)
+    |> elem(0)
+  end
+
   @spec select(GEPA.State.t(), :rand.state() | nil) ::
           {GEPA.Types.program_idx(), :rand.state()}
-  def select(state, rand_state) do
-    # Find program with highest average score
-    best_idx =
-      state.prog_candidate_val_subscores
-      |> Enum.with_index()
-      |> Enum.max_by(fn {scores, _idx} ->
-        if map_size(scores) > 0 do
-          Enum.sum(Map.values(scores)) / map_size(scores)
-        else
-          0.0
-        end
-      end)
-      |> elem(1)
+  def select(state, rand_state), do: select(nil, state, rand_state)
+
+  @impl true
+  @spec select(term(), GEPA.State.t(), :rand.state() | nil) ::
+          {GEPA.Types.program_idx(), :rand.state()}
+  def select(_selector, state, rand_state) do
+    best_idx = best_candidate_idx(state)
 
     # Return tuple for consistency (pass through rand_state or use default)
     {best_idx, rand_state || :rand.seed(:exsss, {1, 2, 3})}
