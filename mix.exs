@@ -203,7 +203,7 @@ defmodule GepaEx.MixProject do
       name: "gepa_ex",
       description: description(),
       files:
-        ~w(lib mix.exs README.md LICENSE docs examples livebooks gepa/LICENSE gepa/README.md assets assets/supertester-logo.svg),
+        ~w(lib mix.exs README.md LICENSE docs examples livebooks gepa/LICENSE gepa/README.md assets),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
