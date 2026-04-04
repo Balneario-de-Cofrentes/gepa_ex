@@ -56,7 +56,7 @@ defmodule GepaEx.MixProject do
       {:mox, "~> 1.1", only: :test},
       {:stream_data, "~> 1.1", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
@@ -203,7 +203,7 @@ defmodule GepaEx.MixProject do
       name: "gepa_ex",
       description: description(),
       files:
-        ~w(lib mix.exs README.md LICENSE docs examples livebooks gepa/LICENSE gepa/README.md assets),
+        ~w(lib mix.exs README.md LICENSE docs examples livebooks gepa/LICENSE gepa/README.md assets assets/supertester-logo.svg),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
