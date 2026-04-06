@@ -55,6 +55,7 @@ defmodule GepaEx.MixProject do
       # Development and testing
       {:mox, "~> 1.1", only: :test},
       {:stream_data, "~> 1.1", only: :test},
+      {:supertester, "~> 0.3", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
       {:ex_doc, "~> 0.40.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

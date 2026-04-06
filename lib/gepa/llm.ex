@@ -11,6 +11,8 @@ defmodule GEPA.LLM do
   - `GEPA.LLM.ReqLLM` - Production implementation using ReqLLM library
     - Supports OpenAI (default: gpt-4o-mini)
     - Supports Google Gemini (default: gemini-flash-lite-latest)
+  - `GEPA.LLM.Anthropic` - Direct Anthropic Messages API implementation via Req
+    - Supports Claude models (default: claude-haiku-4-5)
   - `GEPA.LLM.Mock` - Mock implementation for testing
 
   ## Configuration
@@ -41,6 +43,10 @@ defmodule GEPA.LLM do
 
       # Using Gemini
       llm = GEPA.LLM.ReqLLM.new(provider: :gemini)
+      {:ok, response} = GEPA.LLM.complete(llm, "Explain GEPA")
+
+      # Using Anthropic Claude
+      llm = GEPA.LLM.Anthropic.new()
       {:ok, response} = GEPA.LLM.complete(llm, "Explain GEPA")
 
       # Using Mock (for testing)
@@ -122,12 +128,21 @@ defmodule GEPA.LLM do
         parse_env_provider(System.get_env("GEPA_LLM_PROVIDER")) ||
         :openai
 
+    build_default_llm(provider, config)
+  end
+
+  defp build_default_llm(:anthropic, config) do
+    GEPA.LLM.Anthropic.new(config)
+  end
+
+  defp build_default_llm(provider, config) do
     GEPA.LLM.ReqLLM.new(Keyword.put(config, :provider, provider))
   end
 
   defp parse_env_provider(nil), do: nil
   defp parse_env_provider("openai"), do: :openai
   defp parse_env_provider("gemini"), do: :gemini
+  defp parse_env_provider("anthropic"), do: :anthropic
   defp parse_env_provider("mock"), do: :mock
   defp parse_env_provider(_), do: nil
 end
