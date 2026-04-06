@@ -357,6 +357,75 @@ defmodule GEPA.Proposer.InstructionProposalTest do
     end
   end
 
+  describe "new/1 — structured_output option" do
+    test "defaults structured_output to false" do
+      llm = Mock.new(responses: ["improved"])
+      proposal = InstructionProposal.new(llm: llm)
+
+      assert proposal.structured_output == false
+    end
+
+    test "accepts structured_output: true" do
+      llm = Mock.new(responses: ["improved"])
+      proposal = InstructionProposal.new(llm: llm, structured_output: true)
+
+      assert proposal.structured_output == true
+    end
+
+    test "accepts structured_output: false explicitly" do
+      llm = Mock.new(responses: ["improved"])
+      proposal = InstructionProposal.new(llm: llm, structured_output: false)
+
+      assert proposal.structured_output == false
+    end
+  end
+
+  describe "propose/4 — structured_output: true" do
+    test "uses complete_structured path and extracts instruction key" do
+      # Mock returns JSON with instruction key; fallback wraps it correctly
+      json_response = Jason.encode!(%{"instruction" => "structured result"})
+      llm = Mock.new(responses: [json_response])
+
+      proposal = InstructionProposal.new(llm: llm, structured_output: true)
+
+      {:ok, result} = InstructionProposal.propose(proposal, "comp", "original", [])
+
+      assert result == "structured result"
+    end
+
+    test "extracts instruction from plain text via fallback" do
+      llm = Mock.new(responses: ["plain improved instruction"])
+      proposal = InstructionProposal.new(llm: llm, structured_output: true)
+
+      {:ok, result} = InstructionProposal.propose(proposal, "comp", "original", [])
+
+      assert result == "plain improved instruction"
+    end
+
+    test "returns empty string when structured result has no instruction key" do
+      json_response = Jason.encode!(%{"other_key" => "value"})
+      llm = Mock.new(responses: [json_response])
+
+      proposal = InstructionProposal.new(llm: llm, structured_output: true)
+
+      {:ok, result} = InstructionProposal.propose(proposal, "comp", "original", [])
+
+      # Map has no "instruction" key → extract_structured_instruction returns ""
+      assert result == ""
+    end
+  end
+
+  describe "propose/4 — structured_output: false (default text path unchanged)" do
+    test "still uses the text path when structured_output is false" do
+      llm = Mock.new(responses: ["  text response  "])
+      proposal = InstructionProposal.new(llm: llm, structured_output: false)
+
+      {:ok, result} = InstructionProposal.propose(proposal, "comp", "original", [])
+
+      assert result == "text response"
+    end
+  end
+
   # Helper to capture the prompt sent to LLM
   defp capture_prompt(assertion_fn) do
     Mock.new(

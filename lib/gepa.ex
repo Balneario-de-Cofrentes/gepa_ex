@@ -58,6 +58,7 @@ defmodule GEPA do
   - `:run_dir` - Directory for state persistence (default: nil)
   - `:reflection_llm` - LLM for generating improved instructions (default: nil)
   - `:proposal_template` - Custom template for instruction proposal (default: built-in)
+  - `:structured_output` - Use tool_use / function calling for instruction proposals (default: false)
   - `:progress` - Enable progress display (default: false). Can be `true` or a keyword
     list with options: `[width: 60, color: true]`
 
@@ -153,6 +154,13 @@ defmodule GEPA do
         proposal_opts =
           if opts[:proposal_template] do
             Keyword.put(proposal_opts, :template, opts[:proposal_template])
+          else
+            proposal_opts
+          end
+
+        proposal_opts =
+          if Keyword.has_key?(opts, :structured_output) do
+            Keyword.put(proposal_opts, :structured_output, opts[:structured_output])
           else
             proposal_opts
           end

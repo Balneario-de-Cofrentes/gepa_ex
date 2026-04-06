@@ -114,6 +114,44 @@ defmodule GEPA.LLM.Anthropic do
     error -> {:error, Exception.message(error)}
   end
 
+  @impl GEPA.LLM
+  @spec complete_structured(t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def complete_structured(%__MODULE__{} = llm, prompt, opts \\ []) when is_binary(prompt) do
+    model = Keyword.get(opts, :model, llm.model)
+    api_key = Keyword.get(opts, :api_key, llm.api_key)
+    temperature = Keyword.get(opts, :temperature, llm.temperature)
+    max_tokens = Keyword.get(opts, :max_tokens, llm.max_tokens)
+    timeout = Keyword.get(opts, :timeout, llm.timeout)
+
+    with {:ok, key} <- validate_api_key(api_key) do
+      body = %{
+        model: model,
+        max_tokens: max_tokens,
+        temperature: temperature,
+        messages: [%{role: "user", content: prompt}],
+        tools: [instruction_tool_schema()],
+        tool_choice: %{type: "tool", name: "propose_instruction"}
+      }
+
+      case Req.post(@anthropic_api_url,
+             json: body,
+             headers: build_headers(key),
+             receive_timeout: timeout
+           ) do
+        {:ok, %{status: 200, body: response_body}} ->
+          extract_tool_result(response_body)
+
+        {:ok, %{status: status, body: error_body}} ->
+          {:error, format_api_error(status, error_body)}
+
+        {:error, reason} ->
+          {:error, format_req_error(reason)}
+      end
+    end
+  rescue
+    error -> {:error, Exception.message(error)}
+  end
+
   ## Private Functions
 
   defp validate_api_key(nil), do: {:error, "missing required option :api_key"}
@@ -151,4 +189,32 @@ defmodule GEPA.LLM.Anthropic do
 
   defp format_req_error(%{reason: reason}), do: "request failed: #{inspect(reason)}"
   defp format_req_error(reason), do: "request failed: #{inspect(reason)}"
+
+  defp instruction_tool_schema do
+    %{
+      name: "propose_instruction",
+      description: "Propose an improved instruction text for the component.",
+      input_schema: %{
+        type: "object",
+        properties: %{
+          instruction: %{
+            type: "string",
+            description: "The improved instruction text. Plain text only, no explanation."
+          }
+        },
+        required: ["instruction"]
+      }
+    }
+  end
+
+  defp extract_tool_result(%{"content" => content}) when is_list(content) do
+    case Enum.find(content, &match?(%{"type" => "tool_use", "name" => "propose_instruction"}, &1)) do
+      %{"input" => input} -> {:ok, input}
+      nil -> {:error, "no tool_use block in Anthropic response"}
+    end
+  end
+
+  defp extract_tool_result(body) do
+    {:error, "unexpected Anthropic response format: #{inspect(body)}"}
+  end
 end
