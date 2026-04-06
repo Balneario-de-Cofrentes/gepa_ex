@@ -64,6 +64,8 @@ defmodule GEPA.LLM do
           timeout: pos_integer()
         ]
 
+  @type structured_result :: {:ok, map()} | {:error, term()}
+
   @doc """
   Completes a prompt using the LLM provider.
 
@@ -87,6 +89,23 @@ defmodule GEPA.LLM do
               {:ok, String.t()} | {:error, term()}
 
   @doc """
+  Completes a prompt using the LLM provider and returns a structured map.
+
+  Providers that support native tool_use / function calling implement this
+  callback to force well-formed JSON output.  Providers that do not implement
+  it fall back to `complete/3` with JSON parsing via `fallback_complete_structured/3`.
+
+  ## Returns
+
+    - `{:ok, map}` - Structured result (always includes at least `"instruction"` key)
+    - `{:error, reason}` - Error with reason
+  """
+  @callback complete_structured(llm :: t(), prompt :: String.t(), opts :: completion_opts()) ::
+              structured_result()
+
+  @optional_callbacks complete_structured: 3
+
+  @doc """
   Convenience function to call complete/3 on any LLM implementation.
 
   Delegates to the appropriate module's complete/3 callback.
@@ -100,6 +119,52 @@ defmodule GEPA.LLM do
 
   def complete(module, prompt, opts) when is_atom(module) do
     module.complete(module, prompt, opts)
+  end
+
+  @doc """
+  Completes a prompt and returns a structured map.
+
+  Dispatches to the provider's `complete_structured/3` when available;
+  falls back to `complete/3` with JSON parsing otherwise.
+
+  ## Examples
+
+      {:ok, %{"instruction" => text}} = GEPA.LLM.complete_structured(llm, prompt)
+  """
+  @spec complete_structured(t(), String.t(), completion_opts()) :: structured_result()
+  def complete_structured(llm, prompt, opts \\ [])
+
+  def complete_structured(%module{} = llm, prompt, opts) when is_atom(module) do
+    if function_exported?(module, :complete_structured, 3) do
+      module.complete_structured(llm, prompt, opts)
+    else
+      fallback_complete_structured(llm, prompt, opts)
+    end
+  end
+
+  def complete_structured(module, prompt, opts) when is_atom(module) do
+    if function_exported?(module, :complete_structured, 3) do
+      module.complete_structured(module, prompt, opts)
+    else
+      fallback_complete_structured(module, prompt, opts)
+    end
+  end
+
+  defp fallback_complete_structured(llm, prompt, opts) do
+    case complete(llm, prompt, opts) do
+      {:ok, text} -> parse_instruction_json(text)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp parse_instruction_json(text) do
+    trimmed = String.trim(text)
+
+    case Jason.decode(trimmed) do
+      {:ok, %{"instruction" => _} = map} -> {:ok, map}
+      {:ok, map} when is_map(map) -> {:ok, map}
+      {:error, _} -> {:ok, %{"instruction" => trimmed}}
+    end
   end
 
   @doc """

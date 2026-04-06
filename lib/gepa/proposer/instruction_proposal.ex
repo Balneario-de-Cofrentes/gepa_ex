@@ -51,14 +51,16 @@ defmodule GEPA.Proposer.InstructionProposal do
     :template,
     :llm,
     :extract_fn,
-    :format_fn
+    :format_fn,
+    structured_output: false
   ]
 
   @type t :: %__MODULE__{
           template: String.t(),
           llm: GEPA.LLM.t(),
           extract_fn: (String.t() -> String.t()) | nil,
-          format_fn: (list(map()) -> String.t()) | nil
+          format_fn: (list(map()) -> String.t()) | nil,
+          structured_output: boolean()
         }
 
   @required_placeholders ["{component_name}", "{current_instruction}", "{reflective_dataset}"]
@@ -124,7 +126,8 @@ defmodule GEPA.Proposer.InstructionProposal do
       template: template,
       llm: llm,
       extract_fn: opts[:extract_fn],
-      format_fn: opts[:format_fn]
+      format_fn: opts[:format_fn],
+      structured_output: Keyword.get(opts, :structured_output, false)
     }
   end
 
@@ -155,25 +158,30 @@ defmodule GEPA.Proposer.InstructionProposal do
   @spec propose(t(), String.t(), String.t(), list(map())) ::
           {:ok, String.t()} | {:error, term()}
   def propose(%__MODULE__{} = config, component_name, current_instruction, dataset) do
-    # Format the dataset
     formatted_dataset = format_dataset(config, dataset)
 
-    # Build prompt from template
     prompt =
       config.template
       |> String.replace("{component_name}", component_name)
       |> String.replace("{current_instruction}", current_instruction)
       |> String.replace("{reflective_dataset}", formatted_dataset)
 
-    # Call LLM
-    case GEPA.LLM.complete(config.llm, prompt) do
-      {:ok, response} ->
-        # Extract instruction from response
-        instruction = extract_instruction(config, response)
-        {:ok, instruction}
+    if config.structured_output do
+      case GEPA.LLM.complete_structured(config.llm, prompt) do
+        {:ok, result} ->
+          {:ok, extract_structured_instruction(result)}
 
-      {:error, reason} ->
-        {:error, {:llm_error, reason}}
+        {:error, reason} ->
+          {:error, {:llm_error, reason}}
+      end
+    else
+      case GEPA.LLM.complete(config.llm, prompt) do
+        {:ok, response} ->
+          {:ok, extract_instruction(config, response)}
+
+        {:error, reason} ->
+          {:error, {:llm_error, reason}}
+      end
     end
   end
 
@@ -294,5 +302,9 @@ defmodule GEPA.Proposer.InstructionProposal do
 
   defp extract_instruction(%__MODULE__{extract_fn: extract_fn}, response) do
     extract_fn.(response)
+  end
+
+  defp extract_structured_instruction(result) when is_map(result) do
+    Map.get(result, "instruction") || Map.get(result, :instruction) || ""
   end
 end

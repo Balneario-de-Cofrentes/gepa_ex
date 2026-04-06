@@ -142,6 +142,20 @@ defmodule GEPA.LLM.ReqLLM do
       {:error, format_error(error)}
   end
 
+  @impl GEPA.LLM
+  @spec complete_structured(t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def complete_structured(%__MODULE__{} = llm, prompt, opts \\ []) when is_binary(prompt) do
+    merged_opts = merge_options(llm, opts)
+
+    case llm.provider do
+      :openai -> complete_structured_openai(prompt, merged_opts)
+      :gemini -> complete_structured_gemini(prompt, merged_opts)
+    end
+  rescue
+    error ->
+      {:error, format_error(error)}
+  end
+
   ## Private Functions
 
   defp merge_options(llm, opts) do
@@ -215,6 +229,44 @@ defmodule GEPA.LLM.ReqLLM do
 
   defp get_default_api_key(:gemini) do
     System.get_env("GEMINI_API_KEY") || System.get_env("GOOGLE_API_KEY")
+  end
+
+  @instruction_schema [instruction: [type: :string, required: true, doc: "The improved instruction text."]]
+
+  defp complete_structured_openai(prompt, opts) do
+    model_opts = build_model_opts(opts)
+
+    with {:ok, model} <- required_option(opts, :model),
+         {:ok, api_key} <- required_option(opts, :api_key),
+         :ok <- ReqLLM.put_key(:openai_api_key, api_key),
+         {:ok, response} <-
+           ReqLLM.generate_object(
+             ReqLLM.Model.new(:openai, model, model_opts),
+             prompt,
+             @instruction_schema
+           ) do
+      ReqLLM.Response.unwrap_object(response)
+    else
+      {:error, _} = error -> error
+    end
+  end
+
+  defp complete_structured_gemini(prompt, opts) do
+    model_opts = build_model_opts(opts)
+
+    with {:ok, model} <- required_option(opts, :model),
+         {:ok, api_key} <- required_option(opts, :api_key),
+         :ok <- ReqLLM.put_key(:gemini_api_key, api_key),
+         {:ok, response} <-
+           ReqLLM.generate_object(
+             ReqLLM.Model.new(:google, model, model_opts),
+             prompt,
+             @instruction_schema
+           ) do
+      ReqLLM.Response.unwrap_object(response)
+    else
+      {:error, _} = error -> error
+    end
   end
 
   defp format_error(error) when is_exception(error) do
