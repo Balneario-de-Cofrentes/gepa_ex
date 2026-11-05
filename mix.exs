@@ -8,7 +8,7 @@ defmodule GepaEx.MixProject do
     [
       app: :gepa_ex,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
@@ -49,8 +49,8 @@ defmodule GepaEx.MixProject do
       {:telemetry, "~> 1.2"},
 
       # LLM integration
-      {:req_llm, "~> 1.0.0-rc.7"},
-      {:req, "~> 0.5.0"},
+      {:req_llm, "~> 1.29"},
+      {:req, "~> 0.7"},
 
       # Development and testing
       {:mox, "~> 1.1", only: :test},
