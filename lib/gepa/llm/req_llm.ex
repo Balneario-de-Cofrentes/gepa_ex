@@ -75,6 +75,12 @@ defmodule GEPA.LLM.ReqLLM do
     gemini: "gemini-flash-lite-latest"
   }
 
+  @req_llm_providers %{openai: :openai, gemini: :google}
+
+  @instruction_schema [
+    instruction: [type: :string, required: true, doc: "The improved instruction text."]
+  ]
+
   @default_temperature 0.7
   @default_max_tokens 2000
   @default_timeout 60_000
@@ -133,13 +139,10 @@ defmodule GEPA.LLM.ReqLLM do
     # Merge instance config with per-call options
     merged_opts = merge_options(llm, opts)
 
-    case llm.provider do
-      :openai -> complete_openai(prompt, merged_opts)
-      :gemini -> complete_gemini(prompt, merged_opts)
-    end
+    generate_text(llm.provider, prompt, merged_opts)
   rescue
     error ->
-      {:error, format_error(error)}
+      {:error, Exception.message(error)}
   end
 
   @impl GEPA.LLM
@@ -147,13 +150,10 @@ defmodule GEPA.LLM.ReqLLM do
   def complete_structured(%__MODULE__{} = llm, prompt, opts \\ []) when is_binary(prompt) do
     merged_opts = merge_options(llm, opts)
 
-    case llm.provider do
-      :openai -> complete_structured_openai(prompt, merged_opts)
-      :gemini -> complete_structured_gemini(prompt, merged_opts)
-    end
+    generate_object(llm.provider, prompt, merged_opts)
   rescue
     error ->
-      {:error, format_error(error)}
+      {:error, Exception.message(error)}
   end
 
   ## Private Functions
@@ -171,37 +171,27 @@ defmodule GEPA.LLM.ReqLLM do
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
 
-  defp complete_openai(prompt, opts) do
-    model_opts = build_model_opts(opts)
-
-    with {:ok, model} <- required_option(opts, :model),
-         {:ok, api_key} <- required_option(opts, :api_key),
-         :ok <- ReqLLM.put_key(:openai_api_key, api_key),
-         {:ok, response} <-
-           ReqLLM.generate_text(
-             ReqLLM.Model.new(:openai, model, model_opts),
-             prompt
-           ) do
+  defp generate_text(provider, prompt, opts) do
+    with {:ok, model_spec, call_opts} <- build_call(provider, opts),
+         {:ok, response} <- ReqLLM.generate_text(model_spec, prompt, call_opts) do
       {:ok, ReqLLM.Response.text(response)}
-    else
-      {:error, _} = error -> error
     end
   end
 
-  defp complete_gemini(prompt, opts) do
-    model_opts = build_model_opts(opts)
-
-    with {:ok, model} <- required_option(opts, :model),
-         {:ok, api_key} <- required_option(opts, :api_key),
-         :ok <- ReqLLM.put_key(:gemini_api_key, api_key),
+  defp generate_object(provider, prompt, opts) do
+    with {:ok, model_spec, call_opts} <- build_call(provider, opts),
          {:ok, response} <-
-           ReqLLM.generate_text(
-             ReqLLM.Model.new(:google, model, model_opts),
-             prompt
-           ) do
-      {:ok, ReqLLM.Response.text(response)}
-    else
-      {:error, _} = error -> error
+           ReqLLM.generate_object(model_spec, prompt, @instruction_schema, call_opts) do
+      ReqLLM.Response.unwrap_object(response)
+    end
+  end
+
+  # The API key travels per call instead of through the global ReqLLM.put_key/2.
+  defp build_call(provider, opts) do
+    with {:ok, model} <- required_option(opts, :model),
+         {:ok, api_key} <- required_option(opts, :api_key) do
+      {:ok, {Map.fetch!(@req_llm_providers, provider), model, build_model_opts(opts)},
+       [api_key: api_key]}
     end
   end
 
@@ -230,48 +220,4 @@ defmodule GEPA.LLM.ReqLLM do
   defp get_default_api_key(:gemini) do
     System.get_env("GEMINI_API_KEY") || System.get_env("GOOGLE_API_KEY")
   end
-
-  @instruction_schema [instruction: [type: :string, required: true, doc: "The improved instruction text."]]
-
-  defp complete_structured_openai(prompt, opts) do
-    model_opts = build_model_opts(opts)
-
-    with {:ok, model} <- required_option(opts, :model),
-         {:ok, api_key} <- required_option(opts, :api_key),
-         :ok <- ReqLLM.put_key(:openai_api_key, api_key),
-         {:ok, response} <-
-           ReqLLM.generate_object(
-             ReqLLM.Model.new(:openai, model, model_opts),
-             prompt,
-             @instruction_schema
-           ) do
-      ReqLLM.Response.unwrap_object(response)
-    else
-      {:error, _} = error -> error
-    end
-  end
-
-  defp complete_structured_gemini(prompt, opts) do
-    model_opts = build_model_opts(opts)
-
-    with {:ok, model} <- required_option(opts, :model),
-         {:ok, api_key} <- required_option(opts, :api_key),
-         :ok <- ReqLLM.put_key(:gemini_api_key, api_key),
-         {:ok, response} <-
-           ReqLLM.generate_object(
-             ReqLLM.Model.new(:google, model, model_opts),
-             prompt,
-             @instruction_schema
-           ) do
-      ReqLLM.Response.unwrap_object(response)
-    else
-      {:error, _} = error -> error
-    end
-  end
-
-  defp format_error(error) when is_exception(error) do
-    Exception.message(error)
-  end
-
-  defp format_error(error), do: error
 end
